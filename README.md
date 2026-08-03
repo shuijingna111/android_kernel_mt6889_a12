@@ -3,7 +3,7 @@
 realme X7 Pro（RMX2121 / MT6889 / Dimensity 1000+）**Android 12** 自编译内核，集成 **KernelSU root**，提供可刷机的 boot.img。
 
 - 内核版本：`4.14.186+`（Android 12 / ColorOS 12，os version 12.0.0，patch 2022-12）
-- 当前状态：✅ 已编译通过、✅ 真机验证能开机、✅ **无任何警告弹窗**（VINTF 检测已修复）、root 激活见下方说明
+- 当前状态：✅ 已编译通过、✅ 真机验证能开机、✅ **无任何警告弹窗**（VINTF 检测已修复）、✅ **root 已激活**（`adb shell su -c id` 返回 `uid=0`）
 
 > 注意：本仓库是 Android 12 版本。旧的 Android 12→11 移植版已废弃并删除。
 
@@ -28,6 +28,7 @@ realme X7 Pro（RMX2121 / MT6889 / Dimensity 1000+）**Android 12** 自编译内
 | `a9eeebb36` | `kernel-4.14 -> .` 自引用软链（MTK 头文件路径要求） |
 | `c5626c215` | **修复 VINTF 弹窗**：开启 `CONFIG_CC_STACKPROTECTOR_STRONG=y` |
 | `f3836d61f` | 本文档 + [HANDOFF.md](HANDOFF.md) |
+| （未提交） | **开启 BBR**：`CONFIG_TCP_CONG_BBR=y` + `CONFIG_NET_SCH_FQ=y` + `CONFIG_DEFAULT_BBR=y`（默认拥塞控制 bbr）；`sch_generic.c` 默认 qdisc 改为 FQ（`fq_qdisc_ops`） |
 
 ### ⚠️ 必读 1：KernelSU 的冷属性修复（编译前必须做）
 
@@ -82,12 +83,13 @@ mkbootimg --kernel arch/arm64/boot/Image.gz \
 ## 刷机
 
 ```bash
-fastboot flash boot boot_ksu_a12_nomagisk_v3.img
+fastboot flash boot boot_ksu_a12_nomagisk_v4_bbr.img
 ```
 
 | 镜像 | 说明 |
 |---|---|
-| `boot_ksu_a12_nomagisk_v3.img` | **当前交付**：KSU 内核 + 纯原厂 ramdisk，VINTF 修复（无弹窗） |
+| `boot_ksu_a12_nomagisk_v4_bbr.img` | **当前交付**：KSU 内核（默认 BBR 拥塞控制）+ 纯原厂 ramdisk，VINTF 修复（无弹窗） |
+| `boot_ksu_a12_nomagisk_v3.img` | 上一版：同 v4 但默认拥塞控制仍为 BIC |
 | `boot_shouhou.img` | 售后包原厂 A12 boot（恢复用母本） |
 | `magisk_patched-30700_wWwyg.img` | 原厂内核 + Magisk ramdisk（恢复基准） |
 

@@ -8,7 +8,7 @@
 
 ## 1. 这个项目干了什么（一句话）
 
-**把 realme X7 Pro（RMX2121 / MT6889）官方 Android 12 内核源码（4.14.186）加上 KernelSU root，修掉两个会导致不开机/弹窗的 bug，编译并打包出可刷机的 boot.img（v3 真机验证通过：能开机、无弹窗）。**
+**把 realme X7 Pro（RMX2121 / MT6889）官方 Android 12 内核源码（4.14.186）加上 KernelSU root，修掉两个会导致不开机/弹窗的 bug，开启 BBR 拥塞控制，编译并打包出可刷机的 boot.img（v3 真机验证通过：能开机、无弹窗；v4 在 v3 基础上默认 BBR，待真机复验）。**
 
 - 手机：realme X7 Pro 5G（RMX2121CN），ColorOS 12（Android 12，build `Q.cadd1b_557`，2022-12-12）
 - 内核：`Linux version 4.14.186+`，原厂 clang 11.0.1 构建
@@ -60,14 +60,21 @@
 - **修复**（提交 c5626c215）：defconfig 开启 `CONFIG_CC_STACKPROTECTOR=y` + `CONFIG_CC_STACKPROTECTOR_STRONG=y`——clang 22 编译实测没问题（之前的担忧不成立）
 - **验证**：VINTF 对比脚本全部通过 + 真机锁屏无弹窗 ✅
 
-### 2.5 打包（boot_ksu_a12_nomagisk_v3.img，当前交付）
+### 2.5 开启 BBR 拥塞控制（2026-08-03）
+
+- defconfig 增加 `CONFIG_TCP_CONG_BBR=y`（内核自带 4.14 官方 BBR v1）+ `CONFIG_NET_SCH_FQ=y`（FQ qdisc，官方推荐搭配）+ `CONFIG_DEFAULT_BBR=y`（默认拥塞控制改为 bbr）
+- ⚠️ 默认拥塞控制要写 **`CONFIG_DEFAULT_BBR=y`**（Kconfig choice 符号），直接写 `CONFIG_DEFAULT_TCP_CONG="bbr"` 会被忽略
+- **默认 qdisc 也改为 FQ（编译期内置）**：`net/sched/sch_generic.c:35` 的 `default_qdisc_ops` 从 `&pfifo_fast_ops` 改为 `&fq_qdisc_ops`；该树的 sch_fq.c 里 ops 名是 `fq_qdisc_ops`（非上游 `fq_ops`）且原为 static，需去掉 `static` 并 `EXPORT_SYMBOL`
+- 验证：`tcp_bbr_cong_ops`、`fq_qdisc_ops` 在 System.map；default_qdisc_ops 的 R_AARCH64_RELATIVE 重定位 addend = fq_qdisc_ops 地址；编译/打包/AVB 均通过
+
+### 2.6 打包（boot_ksu_a12_nomagisk_v4_bbr.img，当前交付）
 
 - 母本：`boot_shouhou.img`（售后包原厂 A12 boot）——ramdisk、dtb、AVB vbmeta、footer 全部取自它，逐字节未改
 - 内核段：**纯 Image.gz**（A12 与 A11 不同！A11 是 Image.gz-dtb 带附加 DTB，A12 是独立 dtb 段）
 - 组装：mkbootimg（header v2、os_version 12.0.0/2022-12、原厂 cmdline）→ padding 32MB → 复制原厂 AVB0 vbmeta → 末尾写 AVBf footer（大端字段）
 - 已验证：magic/kernel_size/ramdisk/vbmeta 逐字节正确、AVB 通过（bootloader 接受）
 
-### 2.6 交付与发布
+### 2.7 交付与发布
 
 - GitHub：https://github.com/shuijingna111/android_kernel_mt6889_a12 （公开，README + 本 HANDOFF）
 - 旧 GitHub 仓库 `android_kernel_mt6889_4.14`（12→11 废弃版）**未删**（gh token 缺 delete_repo 权限）
@@ -78,13 +85,14 @@
 
 | 文件 | 状态 | 说明 |
 |---|---|---|
-| **`boot_ksu_a12_nomagisk_v3.img`** | ✅ **当前交付**（真机验证：开机+无弹窗） | KSU 内核 + 纯原厂 ramdisk，md5 `059c83f2...` |
+| **`boot_ksu_a12_nomagisk_v4_bbr.img`** | ✅ **当前交付**（真机验证：开机+无弹窗；BBR 默认，待真机复验） | KSU 内核（默认 bbr 拥塞控制）+ 纯原厂 ramdisk，md5 `cf2f839d...` |
+| `boot_ksu_a12_nomagisk_v3.img` | 上一版 | 同 v4 但默认 BIC，md5 `059c83f2...` |
 | `boot_shouhou.img` | 原厂母本（永远保留） | 售后包 A12 boot，md5 `cfb90f82...` |
 | `magisk_patched-30700_wWwyg.img` | 恢复基准（在桌面） | 原厂内核 + Magisk ramdisk，能开机 |
 | `boot_ksu_a12.img` | 废弃 | KSU + Magisk ramdisk（有 VINTF 弹窗） |
 | `boot_ksu_a12_nomagisk.img` / `_v2.img` | 废弃 | VINTF 未修复版 |
 
-root 状态：**未激活**——内核 KSU 模块已生效，但 ksud 用户态还没注入（`ro.ksu.*` 为空）。
+root 状态：**已激活**——KernelSU legacy Manager 注入 ksud 成功，`adb shell su -c id` 返回 `uid=0`。
 
 ---
 
@@ -128,13 +136,14 @@ mkbootimg --kernel arch/arm64/boot/Image.gz \
 7. **换配置后删旧 .o**：`find drivers -name "*.o" -delete` 再编
 8. **不要用 GCC 编译**（几十个兼容错误），必须 clang
 9. **KernelSU Manager 必须用 rsuntk legacy 配套版**：ReSukiSU / KernelSU-Next 的 Manager 协议不兼容（包名也不在白名单）
+10. **默认拥塞控制写 `CONFIG_DEFAULT_BBR=y`**：直接写 `CONFIG_DEFAULT_TCP_CONG="bbr"` 会被 Kconfig 忽略，默认仍是 bic
 
 ---
 
 ## 6. 待办（下一个 AI 做）
 
-- [ ] 装 KernelSU legacy Manager（`下载/KernelSU_v3.2.2-10-legacy-42-g915b4872_32490-release.apk`）→ 注入 ksud → 验证 `adb shell su -c id` 返回 uid=0
-- [ ] 若 Manager 无法注入：把 ksud 直接打进 ramdisk（ksuinit 替换 init + build.prop 检查），重打包
+- [x] 装 KernelSU legacy Manager（`下载/KernelSU_v3.2.2-10-legacy-42-g915b4872_32490-release.apk`）→ 注入 ksud → 验证 `adb shell su -c id` 返回 uid=0（✅ 已完成）
+- [ ] 若 Manager 无法注入：把 ksud 直接打进 ramdisk（ksuinit 替换 init + build.prop 检查），重打包（已不需要）
 - [ ] （可选）换 KernelSU-Next（社区主流 4k⭐），需重新移植编译
 - [ ] （可选）更新 README 状态
 
@@ -148,7 +157,7 @@ make ARCH=arm64 k6889v1_64_defconfig && sh /home/dev/桌面/mt6889/build_a12_cla
 
 # 解包/检查 boot
 unpack_bootimg --boot_img boot_shouhou.img --out out
-python3 -c "d=open('boot_ksu_a12_nomagisk_v3.img','rb').read();print(d[:8],int.from_bytes(d[8:12],'little'),len(d))"
+python3 -c "d=open('boot_ksu_a12_nomagisk_v4_bbr.img','rb').read();print(d[:8],int.from_bytes(d[8:12],'little'),len(d))"
 
 # 抓手机日志（需 root）
 adb shell su -c "cat /proc/last_kmsg" > last_kmsg.txt

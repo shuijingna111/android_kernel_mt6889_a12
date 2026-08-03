@@ -888,7 +888,7 @@ static int fq_dump_stats(struct Qdisc *sch, struct gnet_dump *d)
 	return gnet_stats_copy_app(d, &st, sizeof(st));
 }
 
-static struct Qdisc_ops fq_qdisc_ops __read_mostly = {
+struct Qdisc_ops fq_qdisc_ops __read_mostly = {
 	.id		=	"fq",
 	.priv_size	=	sizeof(struct fq_sched_data),
 
@@ -903,6 +903,7 @@ static struct Qdisc_ops fq_qdisc_ops __read_mostly = {
 	.dump_stats	=	fq_dump_stats,
 	.owner		=	THIS_MODULE,
 };
+EXPORT_SYMBOL(fq_qdisc_ops);
 
 static int __init fq_module_init(void)
 {
