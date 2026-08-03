@@ -94,6 +94,14 @@ char *strcpy(char *dest, const char *src)
 	return tmp;
 }
 EXPORT_SYMBOL(strcpy);
+
+char *stpcpy(char *__restrict__ dest, const char *__restrict__ src)
+{
+	while ((*dest++ = *src++) != '\0')
+		/* nothing */;
+	return --dest;
+}
+EXPORT_SYMBOL(stpcpy);
 #endif
 
 #ifndef __HAVE_ARCH_STRNCPY
