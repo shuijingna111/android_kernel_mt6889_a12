@@ -21,7 +21,6 @@
 | 路径 | 说明 |
 |---|---|
 | `kernel_a12/` | **本仓库**：Android 12 源码 + KernelSU 集成（可用） |
-| `realme_kernel_4.14/` | 旧仓库：上一个 AI 的 12→11 移植版（**废弃，不开机**） |
 | `boot.img` | Android 11 原厂备份（保留） |
 | `magisk_patched-30700_wWwyg.img` | Android 12 原厂内核 + Magisk ramdisk（可开机的恢复基准） |
 | `boot_shouhou.img` | **售后包原厂 Android 12 boot**（纯原厂 ramdisk + AVB，打包母本） |
