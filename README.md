@@ -28,7 +28,7 @@ realme X7 Pro（RMX2121 / MT6889 / Dimensity 1000+）**Android 12** 自编译内
 | `a9eeebb36` | `kernel-4.14 -> .` 自引用软链（MTK 头文件路径要求） |
 | `c5626c215` | **修复 VINTF 弹窗**：开启 `CONFIG_CC_STACKPROTECTOR_STRONG=y` |
 | `f3836d61f` | 本文档 + [HANDOFF.md](HANDOFF.md) |
-| （未提交） | **开启 BBR**：`CONFIG_TCP_CONG_BBR=y` + `CONFIG_NET_SCH_FQ=y` + `CONFIG_DEFAULT_BBR=y`（默认拥塞控制 bbr）；`sch_generic.c` 默认 qdisc 改为 FQ（`fq_qdisc_ops`） |
+| （未提交） | **网络与模块修复**：默认 BBR+编掉 BIC、默认 qdisc=FQ、关闭模块签名/CRC 校验（修复 wifi/热点完全不可用）、文档 |
 
 ### ⚠️ 必读 1：KernelSU 的冷属性修复（编译前必须做）
 

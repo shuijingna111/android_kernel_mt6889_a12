@@ -65,16 +65,27 @@
 - defconfig 增加 `CONFIG_TCP_CONG_BBR=y`（内核自带 4.14 官方 BBR v1）+ `CONFIG_NET_SCH_FQ=y`（FQ qdisc，官方推荐搭配）+ `CONFIG_DEFAULT_BBR=y`（默认拥塞控制改为 bbr）
 - ⚠️ 默认拥塞控制要写 **`CONFIG_DEFAULT_BBR=y`**（Kconfig choice 符号），直接写 `CONFIG_DEFAULT_TCP_CONG="bbr"` 会被忽略
 - **默认 qdisc 也改为 FQ（编译期内置）**：`net/sched/sch_generic.c:35` 的 `default_qdisc_ops` 从 `&pfifo_fast_ops` 改为 `&fq_qdisc_ops`；该树的 sch_fq.c 里 ops 名是 `fq_qdisc_ops`（非上游 `fq_ops`）且原为 static，需去掉 `static` 并 `EXPORT_SYMBOL`
+- **编掉 BIC**：`# CONFIG_TCP_CONG_BIC is not set`（defconfig）+ 删 `drivers/misc/mediatek/Kconfig.default` 的 `select TCP_CONG_BIC`——OPPO 的 `networksetting.rc` 在 early-init 写死 `write /proc/sys/net/ipv4/tcp_congestion_control bic`，BIC 不存在后该写入失败，默认保持 bbr
 - 验证：`tcp_bbr_cong_ops`、`fq_qdisc_ops` 在 System.map；default_qdisc_ops 的 R_AARCH64_RELATIVE 重定位 addend = fq_qdisc_ops 地址；编译/打包/AVB 均通过
 
-### 2.6 打包（boot_ksu_a12_nomagisk_v4_bbr.img，当前交付）
+### 2.6 修复 wifi/热点完全不能用（模块签名+CRC 校验，2026-08-04）
+
+- **现象**：自 v1 起所有 vendor 模块（wlan/bt/fm/gps/conninfra）都加载不了 → wlan0 不存在 → wifi/热点全挂（`persist.sys.oplus.wifi.fail.count` 累计 53 次）
+- **排查**：conninfra_loader 循环报 `Can't open device node(/dev/conninfra_dev)`；手 `insmod conninfra.ko` 报 `Required key not available`
+- **根因一**：defconfig 里 `CONFIG_MODULE_SIG_FORCE=y`（OPLUS_FEATURE_SECURITY_COMMON 段），自编译内核没有厂商签名公钥 → 所有签名模块被拒。修复：defconfig 该段全部置 `# CONFIG_MODULE_SIG... is not set`
+- **根因二**：关掉签名后报 `disagrees about version of symbol module_layout` —— MTK Kconfig 强制 `select MODVERSIONS`（defconfig 关不掉），我们配置与原厂不同导致 module_layout CRC 不一致。修复：`kernel/module.c` 的 `check_version()` 和 `check_modstruct_version()` 直接返回 1（跳过所有符号 CRC 校验），并删除不再使用的 `resolve_rel_crc()`
+- ⚠️ `check_version` 里删掉了 `try_to_force_load` 的唯一调用者，该函数仍被 vermagic 分支使用（`module.c:3041`），保留
+- 验证：真机 `lsmod` 全部模块加载、`wlan0/wlan1/ap0` 出现、wifi 扫描正常、热点开启且有设备连接、流量经 ap0→NAT→ccmni1 全通、0 丢包 0 panic
+- 安全取舍：模块签名校验与 CRC 校验均跳过（自编译内核常规做法，模块仍要求 vermagic 匹配）
+
+### 2.7 打包（boot_ksu_a12_nomagisk_v4_bbr.img，当前交付）
 
 - 母本：`boot_shouhou.img`（售后包原厂 A12 boot）——ramdisk、dtb、AVB vbmeta、footer 全部取自它，逐字节未改
 - 内核段：**纯 Image.gz**（A12 与 A11 不同！A11 是 Image.gz-dtb 带附加 DTB，A12 是独立 dtb 段）
 - 组装：mkbootimg（header v2、os_version 12.0.0/2022-12、原厂 cmdline）→ padding 32MB → 复制原厂 AVB0 vbmeta → 末尾写 AVBf footer（大端字段）
 - 已验证：magic/kernel_size/ramdisk/vbmeta 逐字节正确、AVB 通过（bootloader 接受）
 
-### 2.7 交付与发布
+### 2.8 交付与发布
 
 - GitHub：https://github.com/shuijingna111/android_kernel_mt6889_a12 （公开，README + 本 HANDOFF）
 - 旧 GitHub 仓库 `android_kernel_mt6889_4.14`（12→11 废弃版）**未删**（gh token 缺 delete_repo 权限）
@@ -85,7 +96,7 @@
 
 | 文件 | 状态 | 说明 |
 |---|---|---|
-| **`boot_ksu_a12_nomagisk_v4_bbr.img`** | ✅ **当前交付**（真机验证：开机+无弹窗；BBR 默认，待真机复验） | KSU 内核（默认 bbr 拥塞控制）+ 纯原厂 ramdisk，md5 `cf2f839d...` |
+| **`boot_ksu_a12_nomagisk_v4_bbr.img`** | ✅ **当前交付**（真机验证：开机+无弹窗、wifi/热点正常、BBR 默认+无 BIC） | KSU 内核（默认 bbr、FQ、模块加载修复）+ 纯原厂 ramdisk，md5 `1b5de839...` |
 | `boot_ksu_a12_nomagisk_v3.img` | 上一版 | 同 v4 但默认 BIC，md5 `059c83f2...` |
 | `boot_shouhou.img` | 原厂母本（永远保留） | 售后包 A12 boot，md5 `cfb90f82...` |
 | `magisk_patched-30700_wWwyg.img` | 恢复基准（在桌面） | 原厂内核 + Magisk ramdisk，能开机 |
@@ -137,6 +148,10 @@ mkbootimg --kernel arch/arm64/boot/Image.gz \
 8. **不要用 GCC 编译**（几十个兼容错误），必须 clang
 9. **KernelSU Manager 必须用 rsuntk legacy 配套版**：ReSukiSU / KernelSU-Next 的 Manager 协议不兼容（包名也不在白名单）
 10. **默认拥塞控制写 `CONFIG_DEFAULT_BBR=y`**：直接写 `CONFIG_DEFAULT_TCP_CONG="bbr"` 会被 Kconfig 忽略，默认仍是 bic
+11. **MTK Kconfig 会强制 select（MODVERSIONS / TCP_CONG_BIC）**：defconfig 里 `# ... is not set` 无效，必须删 `drivers/misc/mediatek/Kconfig.default` 里的对应 `select` 行
+12. **模块签名必须关**：defconfig 的 `CONFIG_MODULE_SIG_FORCE=y` 会拒掉所有厂商签名模块（wifi 等全挂），要置 `# CONFIG_MODULE_SIG... is not set`
+13. **模块 CRC 必须跳过**：关签名后还会有 `disagrees about version of symbol module_layout`，需把 `kernel/module.c` 的 `check_version`/`check_modstruct_version` 改为恒返回 1
+14. **KSU 的 su 上下文写不了 `/data/adb`**（SELinux），开机脚本方案不可行，改配置要直接走内核（如编掉 BIC）
 
 ---
 
