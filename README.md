@@ -101,6 +101,19 @@ fastboot flash boot boot_ksu_a12_nomagisk_v4_bbr.img
 
 ---
 
+## 反馈与问题上报
+
+- **提 Issue**：https://github.com/shuijingna111/android_kernel_mt6889_a12/issues （选 `New issue`，附上手机型号、系统版本、镜像 md5）
+- **必带信息**（方便定位，任选）：
+  - `adb shell uname -a`
+  - `adb shell su -c 'dmesg | grep -iE "bug|panic|oops|error" | tail -50'`
+  - `adb logcat -d -b crash`（应用/系统崩溃）
+  - 出问题前做了什么操作（刷机/开热点/插拔设备等）
+- **已知限制**：模块签名与 CRC 校验已关闭（vendor 模块兼容所需）；默认拥塞控制为 BBR、无 BIC；KernelSU 为 rsuntk legacy 版，请用配套 Manager
+- 反馈尽量用中文或英文均可；复现步骤越详细越好
+
+---
+
 ## License
 
 - 内核源码：GPL-2.0（realme/MTK 官方开源）
